@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DataMorph - Universal Data Format Converter</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0a0a0f;--surface:#12121a;--border:#1e1e2e;--text:#e0e0e0;
+    --muted:#888;--accent:#6c63ff;--accent2:#00d4aa;--danger:#ff5555;
+    --mono:'SF Mono','Fira Code','Cascadia Code','Consolas',monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  }
+  html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans)}
+  body{display:flex;flex-direction:column;overflow:hidden}
+
+  /* Header */
+  header{padding:12px 24px;display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--border);flex-shrink:0}
+  header h1{font-size:20px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  header .tagline{color:var(--muted);font-size:13px}
+  .sample-btns{margin-left:auto;display:flex;gap:6px}
+  .sample-btns button{background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;transition:all .15s}
+  .sample-btns button:hover{color:var(--text);border-color:var(--accent)}
+
+  /* Main layout */
+  .main{display:flex;flex:1;overflow:hidden}
+  .pane{flex:1;display:flex;flex-direction:column;padding:12px;min-width:0}
+  .pane-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .pane-label{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .badge{font-size:11px;padding:2px 8px;border-radius:10px;background:var(--accent);color:#fff;white-space:nowrap}
+  .pane textarea{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;padding:12px;resize:none;outline:none;line-height:1.5;tab-size:2}
+  .pane textarea:focus{border-color:var(--accent)}
+  .pane textarea::placeholder{color:#555}
+
+  /* Middle bar */
+  .middle{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:8px;flex-shrink:0;width:52px}
+  .swap-btn{width:40px;height:40px;border-radius:50%;background:var(--surface);border:1px solid var(--border);color:var(--accent2);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+  .swap-btn:hover{background:var(--accent2);color:var(--bg);border-color:var(--accent2)}
+
+  /* Format selectors */
+  .format-row{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+  .fmt-btn{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;font-size:12px;font-weight:500;transition:all .15s}
+  .fmt-btn:hover{border-color:var(--accent);color:var(--text)}
+  .fmt-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  /* Options row */
+  .options-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
+  .options-row label{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px}
+  .options-row select,.options-row input[type="text"]{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:2px 6px;border-radius:4px;font-size:11px;font-family:var(--sans)}
+  .options-row input[type="checkbox"]{accent-color:var(--accent)}
+
+  /* Action buttons */
+  .actions{display:flex;gap:6px;margin-top:8px;flex-shrink:0}
+  .actions button{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;font-size:12px;font-weight:500;transition:all .15s}
+  .actions button:hover{border-color:var(--accent);background:var(--accent);color:#fff}
+  .actions button.copied{background:var(--accent2);border-color:var(--accent2);color:var(--bg)}
+
+  /* Error */
+  .error-msg{color:var(--danger);font-size:12px;margin-top:4px;min-height:16px;flex-shrink:0}
+
+  /* Responsive */
+  @media(max-width:768px){
+    .main{flex-direction:column}
+    .middle{flex-direction:row;width:100%;padding:4px 12px}
+    .pane{padding:8px}
+    .pane textarea{min-height:150px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>DataMorph</h1>
+  <span class="tagline">Universal Data Format Converter</span>
+  <div class="sample-btns">
+    <button onclick="loadSample('json')">Sample JSON</button>
+    <button onclick="loadSample('yaml')">Sample YAML</button>
+    <button onclick="loadSample('csv')">Sample CSV</button>
+    <button onclick="loadSample('xml')">Sample XML</button>
+    <button onclick="loadSample('toml')">Sample TOML</button>
+  </div>
+</header>
+
+<div class="main">
+  <!-- INPUT PANE -->
+  <div class="pane">
+    <div class="pane-header">
+      <span class="pane-label">Input</span>
+      <span class="badge" id="detected-badge" style="display:none">auto</span>
+      <div class="format-row" id="input-formats"></div>
+    </div>
+    <div class="options-row" id="input-options"></div>
+    <textarea id="input" placeholder="Paste your data here... (JSON, YAML, CSV, XML, TOML)" spellcheck="false"></textarea>
+    <div class="error-msg" id="input-error"></div>
+  </div>
+
+  <!-- MIDDLE -->
+  <div class="middle">
+    <button class="swap-btn" onclick="swapPanes()" title="Swap input/output">&#8644;</button>
+  </div>
+
+  <!-- OUTPUT PANE -->
+  <div class="pane">
+    <div class="pane-header">
+      <span class="pane-label">Output</span>
+      <div class="format-row" id="output-formats"></div>
+    </div>
+    <div class="options-row" id="output-options"></div>
+    <textarea id="output" placeholder="Converted output will appear here..." spellcheck="false" readonly></textarea>
+    <div class="error-msg" id="output-error"></div>
+    <div class="actions">
+      <button onclick="copyOutput(this)">Copy</button>
+      <button onclick="downloadOutput()">Download</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ─── FORMATS ────────────────────────────────────────────────
+const FORMATS = ['JSON','YAML','CSV','TSV','XML','TOML'];
+const EXT_MAP = {JSON:'json',YAML:'yml',CSV:'csv',TSV:'tsv',XML:'xml',TOML:'toml'};
+
+let inputFormat = 'JSON';
+let outputFormat = 'YAML';
+let detectedFormat = null;
+
+// ─── OPTIONS STATE ──────────────────────────────────────────
+const opts = {
+  json: { indent: '2', sortKeys: false },
+  csv: { delimiter: ',', quoteAll: false, header: true },
+  tsv: { header: true },
+  yaml: { flow: false },
+  xml: { rootName: 'root' },
+  toml: {}
+};
+
+// ─── DOM REFS ───────────────────────────────────────────────
+const $input = document.getElementById('input');
+const $output = document.getElementById('output');
+const $badge = document.getElementById('detected-badge');
+const $inErr = document.getElementById('input-error');
+const $outErr = document.getElementById('output-error');
+
+// ─── INIT FORMAT BUTTONS ────────────────────────────────────
+function renderFormatBtns(containerId, selected, onClick) {
+  const c = document.getElementById(containerId);
+  c.innerHTML = '';
+  FORMATS.forEach(f => {
+    const b = document.createElement('button');
+    b.className = 'fmt-btn' + (f === selected ? ' active' : '');
+    b.textContent = f;
+    b.onclick = () => onClick(f);
+    c.appendChild(b);
+  });
+}
+
+function setInputFormat(f) { inputFormat = f; renderFormatBtns('input-formats', f, setInputFormat); renderInputOptions(); convert(); }
+function setOutputFormat(f) { outputFormat = f; renderFormatBtns('output-formats', f, setOutputFormat); renderOutputOptions(); convert(); }
+
+renderFormatBtns('input-formats', inputFormat, setInputFormat);
+renderFormatBtns('output-formats', outputFormat, setOutputFormat);
+
+// ─── OPTIONS UI ─────────────────────────────────────────────
+function renderInputOptions() {
+  const c = document.getElementById('input-options');
+  c.innerHTML = '';
+  const fmt = inputFormat.toLowerCase();
+  if (fmt === 'csv') {
+    c.innerHTML = `<label>Delimiter <select id="opt-csv-delim"><option value=",">Comma</option><option value=";">Semicolon</option><option value="|">Pipe</option></select></label>
+      <label><input type="checkbox" id="opt-csv-header" checked> Header row</label>`;
+    document.getElementById('opt-csv-delim').value = opts.csv.delimiter;
+    document.getElementById('opt-csv-header').checked = opts.csv.header;
+    document.getElementById('opt-csv-delim').onchange = e => { opts.csv.delimiter = e.target.value; convert(); };
+    document.getElementById('opt-csv-header').onchange = e => { opts.csv.header = e.target.checked; convert(); };
+  }
+}
+
+function renderOutputOptions() {
+  const c = document.getElementById('output-options');
+  c.innerHTML = '';
+  const fmt = outputFormat.toLowerCase();
+  if (fmt === 'json') {
+    c.innerHTML = `<label>Indent <select id="opt-json-indent"><option value="2">2 spaces</option><option value="4">4 spaces</option><option value="tab">Tab</option><option value="0">Minified</option></select></label>
+      <label><input type="checkbox" id="opt-json-sort"> Sort keys</label>`;
+    document.getElementById('opt-json-indent').value = opts.json.indent;
+    document.getElementById('opt-json-sort').checked = opts.json.sortKeys;
+    document.getElementById('opt-json-indent').onchange = e => { opts.json.indent = e.target.value; convert(); };
+    document.getElementById('opt-json-sort').onchange = e => { opts.json.sortKeys = e.target.checked; convert(); };
+  } else if (fmt === 'csv' || fmt === 'tsv') {
+    const key = fmt;
+    c.innerHTML = `${fmt === 'csv' ? `<label>Delimiter <select id="opt-out-delim"><option value=",">Comma</option><option value=";">Semicolon</option><option value="|">Pipe</option></select></label>` : ''}
+      <label><input type="checkbox" id="opt-out-header" checked> Header row</label>
+      <label><input type="checkbox" id="opt-out-quote"> Quote all</label>`;
+    if (fmt === 'csv' && document.getElementById('opt-out-delim')) {
+      document.getElementById('opt-out-delim').value = opts.csv.delimiter;
+      document.getElementById('opt-out-delim').onchange = e => { opts.csv.delimiter = e.target.value; convert(); };
+    }
+    const hdr = document.getElementById('opt-out-header');
+    const q = document.getElementById('opt-out-quote');
+    if (hdr) { hdr.checked = opts[key]?.header ?? true; hdr.onchange = e => { opts[key] = opts[key]||{}; opts[key].header = e.target.checked; convert(); }; }
+    if (q) { q.checked = opts[key]?.quoteAll ?? false; q.onchange = e => { opts[key] = opts[key]||{}; opts[key].quoteAll = e.target.checked; convert(); }; }
+  } else if (fmt === 'yaml') {
+    c.innerHTML = `<label><input type="checkbox" id="opt-yaml-flow"> Flow style</label>`;
+    document.getElementById('opt-yaml-flow').checked = opts.yaml.flow;
+    document.getElementById('opt-yaml-flow').onchange = e => { opts.yaml.flow = e.target.checked; convert(); };
+  } else if (fmt === 'xml') {
+    c.innerHTML = `<label>Root <input type="text" id="opt-xml-root" value="${opts.xml.rootName}" style="width:80px"></label>`;
+    document.getElementById('opt-xml-root').oninput = e => { opts.xml.rootName = e.target.value || 'root'; convert(); };
+  }
+}
+
+renderInputOptions();
+renderOutputOptions();
+
+// ─── AUTO-DETECT ────────────────────────────────────────────
+function detectFormat(text) {
+  const t = text.trim();
+  if (!t) return null;
+  if (t[0] === '{' || t[0] === '[') return 'JSON';
+  if (t[0] === '<') return 'XML';
+  // TOML: has [section] headers and key = value
+  if (/^\[[\w.-]+\]\s*$/m.test(t) && /^\w[\w.-]*\s*=\s*/m.test(t)) return 'TOML';
+  // CSV: multiple commas per line, multiple lines
+  const lines = t.split('\n').filter(l => l.trim());
+  if (lines.length >= 2) {
+    const commas = (lines[0].match(/,/g)||[]).length;
+    const tabs = (lines[0].match(/\t/g)||[]).length;
+    if (tabs >= 1 && tabs >= commas) return 'TSV';
+    if (commas >= 1) return 'CSV';
+  }
+  // YAML: lines with key: value pattern
+  if (/^[\w][\w\s]*:(\s|$)/m.test(t)) return 'YAML';
+  return null;
+}
+
+// ─── JSON PARSER/SERIALIZER ─────────────────────────────────
+function parseJSON(text) { return JSON.parse(text); }
+
+function serializeJSON(data) {
+  let indent = opts.json.indent;
+  if (indent === 'tab') indent = '\t';
+  else if (indent === '0') indent = undefined;
+  else indent = Number(indent);
+  if (opts.json.sortKeys) data = sortKeys(data);
+  return JSON.stringify(data, null, indent);
+}
+
+function sortKeys(obj) {
+  if (Array.isArray(obj)) return obj.map(sortKeys);
+  if (obj && typeof obj === 'object') {
+    const sorted = {};
+    Object.keys(obj).sort().forEach(k => sorted[k] = sortKeys(obj[k]));
+    return sorted;
+  }
+  return obj;
+}
+
+// ─── YAML PARSER ────────────────────────────────────────────
+function parseYAML(text) {
+  const lines = text.split('\n');
+  let i = 0;
+
+  function currentIndent() {
+    if (i >= lines.length) return -1;
+    const m = lines[i].match(/^(\s*)/);
+    return m ? m[1].length : 0;
+  }
+
+  function parseValue(val) {
+    val = val.trim();
+    if (val === '' || val === 'null' || val === '~') return null;
+    if (val === 'true') return true;
+    if (val === 'false') return false;
+    if (/^-?\d+$/.test(val)) return parseInt(val, 10);
+    if (/^-?\d+\.\d+$/.test(val)) return parseFloat(val);
+    // Quoted strings
+    if ((val[0] === '"' && val[val.length-1] === '"') || (val[0] === "'" && val[val.length-1] === "'"))
+      return val.slice(1, -1);
+    // Flow array
+    if (val[0] === '[' && val[val.length-1] === ']') {
+      try { return JSON.parse(val); } catch(e) {
+        return val.slice(1,-1).split(',').map(s => parseValue(s.trim()));
+      }
+    }
+    // Flow object
+    if (val[0] === '{' && val[val.length-1] === '}') {
+      try { return JSON.parse(val); } catch(e) { return val; }
+    }
+    return val;
+  }
+
+  function parseBlock(baseIndent) {
+    // Peek: is this an array or object?
+    if (i >= lines.length) return null;
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (trimmed.startsWith('- ')) {
+      // Array
+      return parseArray(baseIndent);
+    }
+    // Object
+    return parseObject(baseIndent);
+  }
+
+  function parseArray(baseIndent) {
+    const arr = [];
+    while (i < lines.length) {
+      const ci = currentIndent();
+      if (ci < baseIndent) break;
+      if (ci > baseIndent) break;
+      const line = lines[i].trim();
+      if (!line.startsWith('- ')) break;
+      const afterDash = line.slice(2);
+      i++;
+      if (afterDash.includes(':') && !afterDash.startsWith('"') && !afterDash.startsWith("'")) {
+        // Could be an inline object start
+        // Re-parse as a key:value in a sub-object
+        i--;
+        const oldLine = lines[i];
+        // Temporarily remove the "- " and adjust indent
+        lines[i] = ' '.repeat(baseIndent + 2) + afterDash;
+        const obj = parseObject(baseIndent + 2);
+        arr.push(obj);
+        lines[i >= lines.length ? lines.length - 1 : i] = oldLine; // restore (might not matter)
+      } else if (afterDash.trim() === '') {
+        // Block value follows
+        const nextIndent = currentIndent();
+        if (nextIndent > baseIndent) {
+          arr.push(parseBlock(nextIndent));
+        } else {
+          arr.push(null);
+        }
+      } else {
+        arr.push(parseValue(afterDash));
+      }
+    }
+    return arr;
+  }
+
+  function parseObject(baseIndent) {
+    const obj = {};
+    while (i < lines.length) {
+      const ci = currentIndent();
+      if (ci < baseIndent) break;
+      if (ci > baseIndent) break;
+      const line = lines[i].trim();
+      if (!line || line.startsWith('#')) { i++; continue; }
+      if (line.startsWith('- ')) break;
+      const colonIdx = line.indexOf(':');
+      if (colonIdx === -1) { i++; continue; }
+      const key = line.slice(0, colonIdx).trim();
+      const valStr = line.slice(colonIdx + 1).trim();
+      i++;
+      if (valStr === '' || valStr === '|' || valStr === '>') {
+        // Block scalar or nested
+        const nextInd = currentIndent();
+        if (nextInd > baseIndent) {
+          if (valStr === '|' || valStr === '>') {
+            // Collect literal block
+            const blockLines = [];
+            const blockIndent = currentIndent();
+            while (i < lines.length && currentIndent() >= blockIndent) {
+              blockLines.push(lines[i].slice(blockIndent));
+              i++;
+            }
+            obj[key] = valStr === '|' ? blockLines.join('\n') : blockLines.join(' ').trim();
+          } else {
+            obj[key] = parseBlock(nextInd);
+          }
+        } else {
+          obj[key] = null;
+        }
+      } else {
+        obj[key] = parseValue(valStr);
+      }
+    }
+    return obj;
+  }
+
+  // Skip blank/comment lines
+  while (i < lines.length && (!lines[i].trim() || lines[i].trim().startsWith('#'))) i++;
+  if (i >= lines.length) return null;
+  const startIndent = currentIndent();
+  return parseBlock(startIndent);
+}
+
+// ─── YAML SERIALIZER ───────────────────────────────────────
+function serializeYAML(data, indent = 0, flow = false) {
+  if (flow || opts.yaml.flow) return serializeYAMLFlow(data);
+  return serializeYAMLBlock(data, indent);
+}
+
+function serializeYAMLFlow(data) {
+  if (data === null || data === undefined) return 'null';
+  if (typeof data === 'boolean') return data ? 'true' : 'false';
+  if (typeof data === 'number') return String(data);
+  if (typeof data === 'string') {
+    if (/[:{}\[\],&*?|>!'"%@`#]/.test(data) || data === '' || data === 'true' || data === 'false' || data === 'null' || /^\d/.test(data))
+      return JSON.stringify(data);
+    return data;
+  }
+  if (Array.isArray(data)) return '[' + data.map(v => serializeYAMLFlow(v)).join(', ') + ']';
+  if (typeof data === 'object') {
+    const pairs = Object.entries(data).map(([k,v]) => `${k}: ${serializeYAMLFlow(v)}`);
+    return '{' + pairs.join(', ') + '}';
+  }
+  return String(data);
+}
+
+function serializeYAMLBlock(data, indent = 0) {
+  const pad = '  '.repeat(indent);
+  if (data === null || data === undefined) return 'null';
+  if (typeof data === 'boolean') return data ? 'true' : 'false';
+  if (typeof data === 'number') return String(data);
+  if (typeof data === 'string') {
+    if (data.includes('\n')) {
+      return '|\n' + data.split('\n').map(l => pad + '  ' + l).join('\n');
+    }
+    if (/[:{}\[\],&*?|>!'"%@`#]/.test(data) || data === '' || data === 'true' || data === 'false' || data === 'null' || /^\d+$/.test(data))
+      return JSON.stringify(data);
+    return data;
+  }
+  if (Array.isArray(data)) {
+    if (data.length === 0) return '[]';
+    return '\n' + data.map(item => {
+      const val = serializeYAMLBlock(item, indent + 1);
+      if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+        const inner = val.trim().split('\n').map((l, i) => i === 0 ? l : '  ' + pad + l).join('\n');
+        return pad + '- ' + inner;
+      }
+      return pad + '- ' + val;
+    }).join('\n');
+  }
+  if (typeof data === 'object') {
+    const entries = Object.entries(data);
+    if (entries.length === 0) return '{}';
+    const lines = entries.map(([k,v]) => {
+      const val = serializeYAMLBlock(v, indent + 1);
+      if (typeof v === 'object' && v !== null) {
+        if (val.startsWith('\n')) return pad + k + ':' + val;
+        return pad + k + ':\n' + '  '.repeat(indent + 1) + val;
+      }
+      return pad + k + ': ' + val;
+    });
+    return (indent === 0 ? '' : '\n') + lines.join('\n');
+  }
+  return String(data);
+}
+
+// ─── CSV/TSV PARSER ─────────────────────────────────────────
+function parseCSV(text, delimiter = ',') {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let inQuotes = false;
+  for (let ci = 0; ci < text.length; ci++) {
+    const ch = text[ci];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[ci+1] === '"') { cell += '"'; ci++; }
+        else inQuotes = false;
+      } else {
+        cell += ch;
+      }
+    } else {
+      if (ch === '"') { inQuotes = true; }
+      else if (ch === delimiter) { row.push(cell); cell = ''; }
+      else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[ci+1] === '\n') ci++;
+        row.push(cell); cell = '';
+        if (row.some(c => c !== '')) rows.push(row);
+        row = [];
+      } else {
+        cell += ch;
+      }
+    }
+  }
+  row.push(cell);
+  if (row.some(c => c !== '')) rows.push(row);
+
+  // Convert to array of objects if header mode
+  if (opts.csv.header && rows.length > 1) {
+    const headers = rows[0];
+    return rows.slice(1).map(r => {
+      const obj = {};
+      headers.forEach((h, i) => {
+        let v = r[i] ?? '';
+        if (v === 'true') v = true;
+        else if (v === 'false') v = false;
+        else if (v === 'null') v = null;
+        else if (/^-?\d+$/.test(v)) v = parseInt(v, 10);
+        else if (/^-?\d+\.\d+$/.test(v)) v = parseFloat(v);
+        obj[h] = v;
+      });
+      return obj;
+    });
+  }
+  return rows;
+}
+
+function parseTSV(text) { return parseCSV(text, '\t'); }
+
+// ─── CSV/TSV SERIALIZER ────────────────────────────────────
+function serializeCSV(data, delimiter = ',') {
+  if (!Array.isArray(data)) data = [data];
+  if (data.length === 0) return '';
+
+  // If array of objects
+  if (typeof data[0] === 'object' && data[0] !== null && !Array.isArray(data[0])) {
+    const keys = [...new Set(data.flatMap(o => Object.keys(o)))];
+    const csvEsc = (v) => {
+      const s = v === null || v === undefined ? '' : String(v);
+      if (opts.csv?.quoteAll || opts.tsv?.quoteAll || s.includes(delimiter) || s.includes('"') || s.includes('\n'))
+        return '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    };
+    const rows = [];
+    const oKey = delimiter === '\t' ? 'tsv' : 'csv';
+    if (opts[oKey]?.header !== false) rows.push(keys.map(csvEsc).join(delimiter));
+    data.forEach(obj => rows.push(keys.map(k => csvEsc(obj[k])).join(delimiter)));
+    return rows.join('\n');
+  }
+
+  // Array of arrays
+  const csvEsc = (v) => {
+    const s = v === null || v === undefined ? '' : String(v);
+    if (opts.csv?.quoteAll || s.includes(delimiter) || s.includes('"') || s.includes('\n'))
+      return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  };
+  return data.map(row => (Array.isArray(row) ? row : [row]).map(csvEsc).join(delimiter)).join('\n');
+}
+
+function serializeTSV(data) { return serializeCSV(data, '\t'); }
+
+// ─── XML PARSER ─────────────────────────────────────────────
+function parseXML(text) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(text, 'text/xml');
+  const err = doc.querySelector('parsererror');
+  if (err) throw new Error('Invalid XML: ' + err.textContent.slice(0, 100));
+  return xmlNodeToObj(doc.documentElement);
+}
+
+function xmlNodeToObj(node) {
+  // If only text content
+  if (node.childNodes.length === 1 && node.childNodes[0].nodeType === 3) {
+    return castValue(node.textContent.trim());
+  }
+  if (node.childNodes.length === 0) return '';
+
+  const obj = {};
+  // Attributes
+  for (const attr of node.attributes || []) {
+    obj['@' + attr.name] = castValue(attr.value);
+  }
+  // Children
+  const children = [...node.childNodes].filter(n => n.nodeType === 1);
+  if (children.length === 0 && node.textContent.trim()) return castValue(node.textContent.trim());
+
+  // Group by tag name to detect arrays
+  const groups = {};
+  children.forEach(c => { groups[c.tagName] = (groups[c.tagName]||0) + 1; });
+
+  children.forEach(c => {
+    const val = xmlNodeToObj(c);
+    if (groups[c.tagName] > 1) {
+      if (!obj[c.tagName]) obj[c.tagName] = [];
+      obj[c.tagName].push(val);
+    } else {
+      obj[c.tagName] = val;
+    }
+  });
+  return obj;
+}
+
+function castValue(s) {
+  if (s === 'true') return true;
+  if (s === 'false') return false;
+  if (s === 'null') return null;
+  if (/^-?\d+$/.test(s)) return parseInt(s, 10);
+  if (/^-?\d+\.\d+$/.test(s)) return parseFloat(s);
+  return s;
+}
+
+// ─── XML SERIALIZER ─────────────────────────────────────────
+function serializeXML(data) {
+  const root = opts.xml.rootName || 'root';
+  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  xml += objToXML(data, root, 0);
+  return xml;
+}
+
+function objToXML(data, tagName, indent) {
+  const pad = '  '.repeat(indent);
+  if (data === null || data === undefined) return pad + `<${tagName}/>\n`;
+  if (typeof data !== 'object') return pad + `<${tagName}>${escXML(String(data))}</${tagName}>\n`;
+  if (Array.isArray(data)) {
+    return data.map(item => objToXML(item, tagName, indent)).join('');
+  }
+  // Object
+  let attrs = '';
+  let children = '';
+  for (const [k, v] of Object.entries(data)) {
+    if (k.startsWith('@')) {
+      attrs += ` ${k.slice(1)}="${escXML(String(v))}"`;
+    } else {
+      const childTag = k.replace(/[^a-zA-Z0-9_-]/g, '_');
+      if (Array.isArray(v)) {
+        children += v.map(item => objToXML(item, childTag, indent + 1)).join('');
+      } else {
+        children += objToXML(v, childTag, indent + 1);
+      }
+    }
+  }
+  if (!children) return pad + `<${tagName}${attrs}/>\n`;
+  return pad + `<${tagName}${attrs}>\n${children}${pad}</${tagName}>\n`;
+}
+
+function escXML(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ─── TOML PARSER ────────────────────────────────────────────
+function parseTOML(text) {
+  const result = {};
+  let currentSection = result;
+  let currentPath = [];
+
+  const lines = text.split('\n');
+  for (let li = 0; li < lines.length; li++) {
+    let line = lines[li].trim();
+    if (!line || line.startsWith('#')) continue;
+
+    // Array of tables [[...]]
+    let m = line.match(/^\[\[([^\]]+)\]\]/);
+    if (m) {
+      const path = m[1].split('.').map(s => s.trim().replace(/^["']|["']$/g, ''));
+      let target = result;
+      for (let i = 0; i < path.length - 1; i++) {
+        if (!target[path[i]]) target[path[i]] = {};
+        target = target[path[i]];
+      }
+      const last = path[path.length - 1];
+      if (!target[last]) target[last] = [];
+      const newObj = {};
+      target[last].push(newObj);
+      currentSection = newObj;
+      currentPath = path;
+      continue;
+    }
+
+    // Table [...]
+    m = line.match(/^\[([^\]]+)\]/);
+    if (m) {
+      const path = m[1].split('.').map(s => s.trim().replace(/^["']|["']$/g, ''));
+      let target = result;
+      for (const p of path) {
+        if (!target[p]) target[p] = {};
+        if (Array.isArray(target[p])) target = target[p][target[p].length - 1];
+        else target = target[p];
+      }
+      currentSection = target;
+      currentPath = path;
+      continue;
+    }
+
+    // Key = value
+    m = line.match(/^([\w.\-"]+)\s*=\s*(.*)/);
+    if (m) {
+      const key = m[1].replace(/^["']|["']$/g, '');
+      const val = parseTOMLValue(m[2].trim(), lines, li);
+      // Handle dotted keys
+      const parts = key.split('.');
+      let target = currentSection;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!target[parts[i]]) target[parts[i]] = {};
+        target = target[parts[i]];
+      }
+      target[parts[parts.length - 1]] = val;
+    }
+  }
+  return result;
+}
+
+function parseTOMLValue(val) {
+  if (val.startsWith('"')) {
+    // Basic string
+    const end = val.indexOf('"', 1);
+    return val.slice(1, end === -1 ? val.length : end)
+      .replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\\\/g, '\\');
+  }
+  if (val.startsWith("'")) {
+    const end = val.indexOf("'", 1);
+    return val.slice(1, end === -1 ? val.length : end);
+  }
+  if (val === 'true') return true;
+  if (val === 'false') return false;
+  if (val.startsWith('[')) {
+    // Inline array
+    try {
+      // Handle TOML arrays that look like JSON
+      return JSON.parse(val.replace(/'/g, '"'));
+    } catch(e) {
+      // Simple parse
+      const inner = val.slice(1, val.lastIndexOf(']')).trim();
+      if (!inner) return [];
+      return inner.split(',').map(s => parseTOMLValue(s.trim()));
+    }
+  }
+  if (val.startsWith('{')) {
+    // Inline table
+    const inner = val.slice(1, val.lastIndexOf('}')).trim();
+    const obj = {};
+    if (inner) {
+      inner.split(',').forEach(pair => {
+        const eq = pair.indexOf('=');
+        if (eq !== -1) {
+          const k = pair.slice(0, eq).trim();
+          const v = parseTOMLValue(pair.slice(eq + 1).trim());
+          obj[k] = v;
+        }
+      });
+    }
+    return obj;
+  }
+  // Date
+  if (/^\d{4}-\d{2}-\d{2}/.test(val)) return val.split('#')[0].trim();
+  // Number
+  const num = val.split('#')[0].trim();
+  if (/^-?\d+\.\d+$/.test(num)) return parseFloat(num);
+  if (/^-?\d+$/.test(num)) return parseInt(num, 10);
+  return num;
+}
+
+// ─── TOML SERIALIZER ───────────────────────────────────────
+function serializeTOML(data, prefix = '') {
+  if (typeof data !== 'object' || data === null) return String(data);
+  let inline = '';
+  let sections = '';
+
+  for (const [k, v] of Object.entries(data)) {
+    if (v === null || v === undefined) {
+      inline += `${k} = ""\n`;
+    } else if (typeof v === 'string') {
+      inline += `${k} = ${JSON.stringify(v)}\n`;
+    } else if (typeof v === 'number') {
+      inline += `${k} = ${v}\n`;
+    } else if (typeof v === 'boolean') {
+      inline += `${k} = ${v}\n`;
+    } else if (Array.isArray(v)) {
+      if (v.length > 0 && typeof v[0] === 'object' && !Array.isArray(v[0])) {
+        // Array of tables
+        v.forEach(item => {
+          const path = prefix ? `${prefix}.${k}` : k;
+          sections += `\n[[${path}]]\n`;
+          sections += serializeTOML(item, path).replace(/^\n\[/gm, '\n['); // flatten
+          // Remove nested section headers that got prefixed twice
+        });
+      } else {
+        inline += `${k} = [${v.map(tomlInlineValue).join(', ')}]\n`;
+      }
+    } else if (typeof v === 'object') {
+      const path = prefix ? `${prefix}.${k}` : k;
+      const nested = serializeTOML(v, path);
+      // Only add section header if there are keys
+      if (nested.trim()) {
+        sections += `\n[${path}]\n${nested}`;
+      }
+    }
+  }
+  return inline + sections;
+}
+
+function tomlInlineValue(v) {
+  if (typeof v === 'string') return JSON.stringify(v);
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (Array.isArray(v)) return '[' + v.map(tomlInlineValue).join(', ') + ']';
+  if (typeof v === 'object' && v !== null) {
+    return '{' + Object.entries(v).map(([k,val]) => `${k} = ${tomlInlineValue(val)}`).join(', ') + '}';
+  }
+  return String(v);
+}
+
+// ─── CONVERSION ENGINE ──────────────────────────────────────
+const parsers = {
+  JSON: parseJSON, YAML: parseYAML, CSV: t => parseCSV(t, opts.csv.delimiter),
+  TSV: parseTSV, XML: parseXML, TOML: parseTOML
+};
+const serializers = {
+  JSON: serializeJSON, YAML: d => serializeYAML(d).replace(/^\n/, ''),
+  CSV: d => serializeCSV(d, opts.csv.delimiter),
+  TSV: serializeTSV, XML: serializeXML, TOML: d => serializeTOML(d).trim()
+};
+
+function convert() {
+  const text = $input.value;
+  $inErr.textContent = '';
+  $outErr.textContent = '';
+  $output.value = '';
+
+  if (!text.trim()) {
+    $badge.style.display = 'none';
+    return;
+  }
+
+  // Auto-detect
+  detectedFormat = detectFormat(text);
+  if (detectedFormat) {
+    $badge.textContent = 'detected: ' + detectedFormat;
+    $badge.style.display = '';
+  } else {
+    $badge.style.display = 'none';
+  }
+
+  const fmt = inputFormat;
+  try {
+    const parsed = parsers[fmt](text);
+    try {
+      $output.value = serializers[outputFormat](parsed);
+    } catch(e) {
+      $outErr.textContent = 'Serialization error: ' + e.message;
+    }
+  } catch(e) {
+    $inErr.textContent = 'Parse error: ' + e.message;
+  }
+}
+
+// ─── EVENT LISTENERS ────────────────────────────────────────
+$input.addEventListener('input', () => {
+  // If detected format differs from selected, auto-switch
+  const det = detectFormat($input.value);
+  if (det && det !== inputFormat) {
+    setInputFormat(det);
+  } else {
+    convert();
+  }
+});
+
+// ─── SWAP ───────────────────────────────────────────────────
+window.swapPanes = function() {
+  const outText = $output.value;
+  if (!outText.trim()) return;
+  $input.value = outText;
+  const oldOut = outputFormat;
+  const oldIn = inputFormat;
+  setInputFormat(oldOut);
+  setOutputFormat(oldIn);
+  convert();
+};
+
+// ─── COPY / DOWNLOAD ───────────────────────────────────────
+window.copyOutput = function(btn) {
+  navigator.clipboard.writeText($output.value).then(() => {
+    btn.classList.add('copied');
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.classList.remove('copied'); btn.textContent = 'Copy'; }, 1500);
+  });
+};
+
+window.downloadOutput = function() {
+  const blob = new Blob([$output.value], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'output.' + (EXT_MAP[outputFormat] || 'txt');
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+// ─── SAMPLE DATA ────────────────────────────────────────────
+const SAMPLES = {
+  json: `{
+  "users": [
+    {
+      "id": 1,
+      "name": "Alice Chen",
+      "email": "alice@example.com",
+      "role": "admin",
+      "active": true
+    },
+    {
+      "id": 2,
+      "name": "Bob Smith",
+      "email": "bob@example.com",
+      "role": "user",
+      "active": false
+    },
+    {
+      "id": 3,
+      "name": "Carol Davis",
+      "email": "carol@example.com",
+      "role": "editor",
+      "active": true
+    }
+  ],
+  "meta": {
+    "total": 3,
+    "page": 1,
+    "version": "2.1"
+  }
+}`,
+  yaml: `users:
+  - id: 1
+    name: Alice Chen
+    email: alice@example.com
+    role: admin
+    active: true
+  - id: 2
+    name: Bob Smith
+    email: bob@example.com
+    role: user
+    active: false
+  - id: 3
+    name: Carol Davis
+    email: carol@example.com
+    role: editor
+    active: true
+meta:
+  total: 3
+  page: 1
+  version: "2.1"`,
+  csv: `id,name,email,role,active
+1,Alice Chen,alice@example.com,admin,true
+2,Bob Smith,bob@example.com,user,false
+3,Carol Davis,carol@example.com,editor,true`,
+  xml: `<?xml version="1.0" encoding="UTF-8"?>
+<data>
+  <users>
+    <id>1</id>
+    <name>Alice Chen</name>
+    <email>alice@example.com</email>
+    <role>admin</role>
+    <active>true</active>
+  </users>
+  <users>
+    <id>2</id>
+    <name>Bob Smith</name>
+    <email>bob@example.com</email>
+    <role>user</role>
+    <active>false</active>
+  </users>
+  <users>
+    <id>3</id>
+    <name>Carol Davis</name>
+    <email>carol@example.com</email>
+    <role>editor</role>
+    <active>true</active>
+  </users>
+  <meta>
+    <total>3</total>
+    <page>1</page>
+    <version>2.1</version>
+  </meta>
+</data>`,
+  toml: `title = "User Database"
+version = "2.1"
+
+[[users]]
+id = 1
+name = "Alice Chen"
+email = "alice@example.com"
+role = "admin"
+active = true
+
+[[users]]
+id = 2
+name = "Bob Smith"
+email = "bob@example.com"
+role = "user"
+active = false
+
+[[users]]
+id = 3
+name = "Carol Davis"
+email = "carol@example.com"
+role = "editor"
+active = true
+
+[meta]
+total = 3
+page = 1`
+};
+
+window.loadSample = function(fmt) {
+  $input.value = SAMPLES[fmt];
+  setInputFormat(fmt.toUpperCase());
+  convert();
+};
+</script>
+</body>
+</html>
