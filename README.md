@@ -2,7 +2,7 @@
 
 > Convert a blob of structured data between JSON, YAML, CSV, TSV, XML, and TOML in the browser.
 
-**[Live demo](https://su-datamorph.vercel.app)**
+**[Live demo](https://datamorph-mlx.vercel.app)**
 
 Moving data between formats normally means finding a converter that handles your specific pair, or writing a one-off script. DataMorph parses any of six formats into a common in-memory structure and re-serializes it into any other, so all thirty combinations work from one page. Every parser and serializer is hand-written in the page — no libraries — and the conversion runs locally, so config files and data samples never leave your machine.
 
@@ -30,4 +30,4 @@ npm run dev
 
 ---
 
-Part of a series of 91 small web apps. [Browse them all](https://su-slopmachine.vercel.app).
+Part of a series of 91 small web apps. [Browse them all](https://lorenzoylosada.vercel.app).
